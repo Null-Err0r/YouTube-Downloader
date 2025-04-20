@@ -51,7 +51,7 @@ python ud.py
 
 
 YouTube Downloader
-Description (English)
+
 This is a graphical tool for downloading videos and extracting audio from YouTube videos, developed using PyQt6, yt-dlp, and ffmpeg. It allows you to input a YouTube video link, view available quality options, download the video in your desired quality, or extract its audio as an MP3 file with a 320kbps bitrate.
 Features
 

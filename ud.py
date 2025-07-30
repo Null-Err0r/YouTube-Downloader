@@ -1,3 +1,7 @@
+#!/usr/bin/env python3.10
+# -*- coding: utf-8 -*-
+#
+
 import sys
 import subprocess
 from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTextEdit, QComboBox, QProgressBar, QFileDialog, QMessageBox
@@ -18,7 +22,6 @@ class GetFormatsThread(QThread):
     def run(self):
         creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 
-        # Get title and thumbnail
         command_info = f'yt-dlp --cookies-from-browser firefox --get-title --get-thumbnail "{self.url}"'
         try:
             output_info = subprocess.check_output(
@@ -33,7 +36,6 @@ class GetFormatsThread(QThread):
         except subprocess.CalledProcessError as e:
             self.thumbnail.emit(f"خطا در گرفتن اطلاعات ویدیو: {e}", None)
 
-        # Get formats
         command = f'yt-dlp --cookies-from-browser firefox -F "{self.url}"'
         try:
             output = subprocess.check_output(
@@ -65,8 +67,7 @@ class DownloadThread(QThread):
             creationflags=creationflags
         )
         for line in process.stdout:
-            # Improved progress detection
-            percent = re.search(r'(\d+\.\d+)%|(\d+)%', line)  # Match both "xx.x%" and "xx%"
+            percent = re.search(r'(\d+\.\d+)%|(\d+)%', line) 
             if percent:
                 value = percent.group(1) or percent.group(2)
                 self.progress.emit(int(float(value)))
@@ -83,18 +84,16 @@ class DownloadThread(QThread):
 class YouTubeDownloader(QWidget):
     def __init__(self):
         super().__init__()
-        self.initUI()
         self.downloaded_file = None
         self.format_sizes = {}
         self.custom_path = None
+        self.initUI()
 
     def initUI(self):
         self.setWindowTitle('YouTube Downloader')
         self.setFixedSize(900, 800)
 
         layout = QVBoxLayout()
-
-        self.check_install_dependencies()
 
         self.url_label = QLabel('وارد کردن لینک ویدیو:')
         self.url_input = QLineEdit()
@@ -153,11 +152,15 @@ class YouTubeDownloader(QWidget):
 
         self.setLayout(layout)
 
+        self.check_install_dependencies()
+
     def check_install_dependencies(self):
         creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
         try:
             subprocess.check_call(['yt-dlp', '--version'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=creationflags)
+            subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-U', 'yt-dlp'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=creationflags)
             subprocess.check_call(['ffmpeg', '-version'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=creationflags)
+            self.formats_list.setText('پیش‌نیازها نصب و به‌روزرسانی شدند!')
         except subprocess.CalledProcessError:
             self.formats_list.setText('yt-dlp یا ffmpeg نصب نیست. در حال نصب...')
             try:
@@ -179,7 +182,7 @@ class YouTubeDownloader(QWidget):
 
         self.formats_list.setText('در حال بارگیری اطلاعات ویدیو...')
         self.get_formats_btn.setEnabled(False)
-        self.progress_bar.setRange(0, 0)  # Indeterminate mode (busy indicator)
+        self.progress_bar.setRange(0, 0) 
 
         if self.downloaded_file and os.path.exists(self.downloaded_file):
             try:
@@ -211,10 +214,18 @@ class YouTubeDownloader(QWidget):
         self.quality_select.clear()
         self.format_sizes.clear()
 
+        if "Only images are available" in output or "Some formats may be missing" in output:
+            self.formats_list.setText(output + '\n\nخطا: هیچ فرمت ویدیویی در دسترس نیست. لطفاً لینک دیگری امتحان کنید یا yt-dlp را به‌روزرسانی کنید.')
+            QMessageBox.warning(self, "خطا", "هیچ فرمت ویدیویی در دسترس نیست. ممکن است به دلیل محدودیت‌های یوتیوب (SSAP) باشد. لطفاً لینک دیگری امتحان کنید یا yt-dlp را به‌روزرسانی کنید.")
+            self.get_formats_btn.setEnabled(True)
+            self.progress_bar.setRange(0, 100)
+            self.progress_bar.setValue(0)
+            return
+
         quality_720_index = -1
         for i, line in enumerate(output.split('\n')):
             parts = line.split()
-            if parts and (len(parts) > 1 and (parts[0].isdigit() or "hls-" in parts[0])):
+            if parts and (len(parts) > 1 and parts[0].isdigit()):
                 resolution = re.search(r'(\d+x\d+)', line)
                 if resolution:
                     format_id = parts[0]
@@ -227,9 +238,12 @@ class YouTubeDownloader(QWidget):
 
         if quality_720_index != -1:
             self.quality_select.setCurrentIndex(quality_720_index)
+        elif self.quality_select.count() == 0:
+            self.formats_list.setText(output + '\n\nخطا: هیچ فرمت ویدیویی معتبری یافت نشد.')
+            QMessageBox.warning(self, "خطا", "هیچ فرمت ویدیویی معتبری یافت نشد. لطفاً لینک دیگری امتحان کنید.")
 
         self.get_formats_btn.setEnabled(True)
-        self.progress_bar.setRange(0, 100)  # Back to normal mode
+        self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
 
     def set_custom_path(self):
@@ -255,10 +269,7 @@ class YouTubeDownloader(QWidget):
             save_path = os.path.join(desktop_path, "%(title)s.%(ext)s")
             self.formats_list.setText(f'در حال دانلود در دسکتاپ: {save_path}')
 
-        if "hls-" in format_id:
-            command = f'yt-dlp --cookies-from-browser firefox -f {format_id} --allow-unplayable-formats --merge-output-format mp4 -o "{save_path}" "{url}"'
-        else:
-            command = f'yt-dlp --cookies-from-browser firefox -f {format_id}+bestaudio --merge-output-format mp4 -o "{save_path}" "{url}"'
+        command = f'yt-dlp --cookies-from-browser firefox -f {format_id}+bestaudio --merge-output-format mp4 -o "{save_path}" "{url}"'
         
         self.start_download(command)
 
@@ -284,6 +295,8 @@ class YouTubeDownloader(QWidget):
         self.formats_list.append(message)
         if "Destination" in message:
             self.downloaded_file = message.split("Destination: ")[-1].strip()
+        if "ERROR" in message or "Some formats may be missing" in message:
+            QMessageBox.warning(self, "خطا در دانلود", message + "\nلطفاً yt-dlp را به‌روزرسانی کنید یا لینک دیگری امتحان کنید.")
 
     def on_download_finished(self):
         self.formats_list.append(f'فایل دانلودشده: {self.downloaded_file}')
@@ -311,10 +324,12 @@ class YouTubeDownloader(QWidget):
             )
             self.formats_list.append('صدا با موفقیت استخراج شد!')
             self.progress_bar.setValue(100)
+            QMessageBox.information(self, "استخراج صدا", "صدا با موفقیت به‌صورت MP3 استخراج شد!")
         except subprocess.CalledProcessError as e:
             self.formats_list.append(f'خطا در استخراج صدا: {e.stderr}')
             if "Audio:" not in e.stderr:
                 self.formats_list.append('فایل انتخاب‌شده جریان صوتی ندارد! لطفاً فایلی با صدا انتخاب کنید.')
+                QMessageBox.warning(self, "خطا", "فایل انتخاب‌شده جریان صوتی ندارد! لطفاً فایلی با صدا انتخاب کنید.")
             self.progress_bar.setValue(0)
 
 if __name__ == '__main__':

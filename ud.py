@@ -17,6 +17,8 @@ class GetFormatsThread(QThread):
 
     def __init__(self, url):
         super().__init__()
+        if not re.match(r'^[a-zA-Z0-9_\-/\\]+$', url):
+            raise ValueError("Invalid URL format")
         self.url = url
 
     def run(self):
@@ -54,6 +56,8 @@ class DownloadThread(QThread):
 
     def __init__(self, command):
         super().__init__()
+        if not re.match(r'^[a-zA-Z0-9_\-/\\]+$', command):
+            raise ValueError("Invalid command format")
         self.command = command
 
     def run(self):
@@ -304,6 +308,8 @@ class YouTubeDownloader(QWidget):
             QMessageBox.information(self, "دانلود کامل شد", "فایل ویدیویی با موفقیت دانلود و ترکیب شد!")
 
     def extract_audio_from_file(self, video_file):
+        if not re.match(r'^[a-zA-Z0-9_\-/\\]+$', video_file):
+            raise ValueError("Invalid video file path")
         audio_file = os.path.splitext(video_file)[0] + '.mp3'
         
         self.formats_list.append(f'در حال استخراج صدا از: {video_file}')

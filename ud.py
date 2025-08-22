@@ -11,6 +11,7 @@ import re
 import os
 import requests
 
+
 class GetFormatsThread(QThread):
     finished = pyqtSignal(str)
     thumbnail = pyqtSignal(str, str)
@@ -42,11 +43,35 @@ class GetFormatsThread(QThread):
                 command,
                 shell=True,
                 text=True,
+                stderr=subprocess.STDOUT,  
                 creationflags=creationflags
             )
             self.finished.emit(output)
         except subprocess.CalledProcessError as e:
-            self.finished.emit(f"خطا در دریافت کیفیت‌ها:\n{e}")
+
+            error_output = e.output
+            if "not available on this app" in error_output:
+                try:
+
+                    version_cmd = 'yt-dlp --version'
+                    current_version = subprocess.check_output(version_cmd, shell=True, text=True, creationflags=creationflags).strip()
+                    
+                    custom_message = (
+                        f"خطا: نسخه yt-dlp شما قدیمی است!\n\n"
+                        f"نسخه فعلی شما: {current_version}\n"
+                        f"یوتیوب درخواست‌های این نسخه را مسدود کرده است.\n\n"
+                        f"لطفاً ترمینال (Command Prompt) را باز کرده و با یکی از دستورات زیر آن را به‌روزرسانی کنید:\n\n"
+                        f"yt-dlp -U\n"
+                        f"python3 -m pip install -U yt-dlp\n\n"
+                        f"سپس برنامه را دوباره اجرا کنید."
+                    )
+                    self.finished.emit(custom_message)
+                except Exception:
+
+                    self.finished.emit("خطا: نسخه yt-dlp شما قدیمی است و باید آپدیت شود.\nلطفاً با دستور 'yt-dlp -U' آن را آپدیت کنید.")
+            else:
+
+                self.finished.emit(f"خطا در دریافت کیفیت‌ها:\n{error_output}")
 
 class DownloadThread(QThread):
     progress = pyqtSignal(int)

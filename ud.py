@@ -209,14 +209,6 @@ class YouTubeDownloader(QWidget):
         self.get_formats_btn.setEnabled(False)
         self.progress_bar.setRange(0, 0) 
 
-        if self.downloaded_file and os.path.exists(self.downloaded_file):
-            try:
-                os.remove(self.downloaded_file)
-                self.formats_list.setText(f'فایل قبلی ({self.downloaded_file}) پاک شد.')
-                self.downloaded_file = None
-            except OSError as e:
-                self.formats_list.setText(f'خطا در پاک کردن فایل قبلی: {e}')
-
         self.get_formats_thread = GetFormatsThread(url)
         self.get_formats_thread.finished.connect(self.on_get_formats_finished)
         self.get_formats_thread.thumbnail.connect(self.on_thumbnail_received)

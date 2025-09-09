@@ -1,5 +1,11 @@
 # YouTube-Downloader
-
+<div align="center">
+  <br><br>
+  <a href="https://t.me/NullError_ir" target="_blank">
+    <img src="https://img.shields.io/badge/Telegram-black?style=for-the-badge&logo=Telegram" alt="Telegram" />
+  </a>
+</div>
+<br>
 
 یک ابزار گرافیکی برای دانلود ویدیو و استخراج صدا از ویدیوهای یوتیوب است که با استفاده از کتابخانه‌های PyQt6، yt-dlp و ffmpeg توسعه یافته است. این برنامه به شما امکان می‌دهد تا لینک ویدیوی یوتیوب را وارد کنید، کیفیت‌های موجود را مشاهده کنید، ویدیوی مورد نظر را با کیفیت دلخواه دانلود کنید یا صدای آن را به فرمت MP3 با بیت‌ریت 320kbps استخراج کنید.
 

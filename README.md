@@ -75,7 +75,7 @@ python ud.py
 لینوکس: توزیع‌های مبتنی بر اوبونتو و سایر توزیع‌ها با پشتیبانی از ffmpeg
 
 
-![اسکرین‌شات برنامه](screenshot.png)
+![اسکرین‌شات برنامه](screenshots/screenshot.png)
 
 
 YouTube Downloader

@@ -89,7 +89,7 @@ class GetFormatsThread(QThread):
 
     def run(self):
         creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-        cookie_cmd = f"--cookies-from-browser {self.browser}" if self.browser != "None" else ""
+        cookie_cmd = f"--cookies-from-browser {self.browser}" if self.browser != "none" else ""
 
         command_info = f'yt-dlp {cookie_cmd} --get-title --get-thumbnail "{self.url}"'
         try:
@@ -391,7 +391,7 @@ class YouTubeDownloader(QWidget):
         self.formats_list.setText(f'در حال آماده‌سازی برای دانلود در: {os.path.dirname(save_path)}')
         
         browser = self.browser_select.currentText().lower()
-        cookie_cmd = f"--cookies-from-browser {browser}" if browser != "None" else ""
+        cookie_cmd = f"--cookies-from-browser {browser}" if browser != "none" else ""
         command = f'yt-dlp {cookie_cmd} -f {format_id}+bestaudio --merge-output-format mp4 -o "{save_path}" "{url}"'
         
         self.start_download(command)
@@ -414,7 +414,7 @@ class YouTubeDownloader(QWidget):
             
             save_path = self.get_save_path()
             browser = self.browser_select.currentText().lower()
-            cookie_cmd = f"--cookies-from-browser {browser}" if browser != "None" else ""
+            cookie_cmd = f"--cookies-from-browser {browser}" if browser != "none" else ""
             
             command = f'yt-dlp {cookie_cmd} -f "bestvideo+bestaudio/best" --merge-output-format mp4 -o "{save_path}" "{url}"'
             

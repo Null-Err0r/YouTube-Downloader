@@ -9,6 +9,12 @@
 
 یک ابزار گرافیکی برای دانلود ویدیو و استخراج صدا از ویدیوهای یوتیوب است که با استفاده از کتابخانه‌های PyQt6، yt-dlp و ffmpeg توسعه یافته است. این برنامه به شما امکان می‌دهد تا لینک ویدیوی یوتیوب را وارد کنید، کیفیت‌های موجود را مشاهده کنید، ویدیوی مورد نظر را با کیفیت دلخواه دانلود کنید یا صدای آن را به فرمت MP3 با بیت‌ریت 320kbps استخراج کنید.
 
+## ✨ بروزرسانی ... 
+
+- **پشتیبانی از پروکسی** – مناسب برای عبور از محدودیت‌های شبکه (HTTP، SOCKS4، SOCKS5)
+- **پایداری بالا** – تنظیم خودکار تعداد تلاش مجدد (retries) و تکه‌تکه کردن دانلود برای شبکه‌های ناپایدار
+- **امنیت بیشتر در برابر تزریق فرمان** 
+
 ویژگی‌ها
 
 دانلود ویدیو: دانلود ویدیوها با کیفیت‌های مختلف (مانند 720p، 1080p و غیره).
@@ -60,11 +66,6 @@ pip install pyqt6 yt-dlp
 
 نحوه اجرا
 
-فایل ud.py را دانلود کنید.
-
-در ترمینال یا Command Prompt به دایرکتوری فایل بروید.
-
-دستور زیر را اجرا کنید:
 
 python ud.py
 
@@ -82,6 +83,14 @@ YouTube Downloader
 
 This is a graphical tool for downloading videos and extracting audio from YouTube videos, developed using PyQt6, yt-dlp, and ffmpeg. It allows you to input a YouTube video link, view available quality options, download the video in your desired quality, or extract its audio as an MP3 file with a 320kbps bitrate.
 
+
+## ✨ Update ...
+
+- **Proxy support** – suitable for bypassing network restrictions (HTTP, SOCKS4, SOCKS5)
+- **High stability** – automatic adjustment of the number of retries and download fragmentation for unstable networks
+- **More security against command injection**
+
+  
 Features
 
 Video Download: Download videos in various qualities (e.g., 720p, 1080p, etc.).
@@ -117,10 +126,6 @@ Run the following commands in Command Prompt:
 pip install pyqt6 yt-dlp
 
 How to Run
-
-Download the ud.py file.
-Navigate to the file's directory in a terminal or Command Prompt.
-Run the following command:
 
 python ud.py
 

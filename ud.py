@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-#
 
 import sys
 import subprocess
-from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
-                             QPushButton, QTextEdit, QComboBox, QProgressBar, 
-                             QFileDialog, QMessageBox, QGroupBox, QFormLayout)
+from PyQt6.QtWidgets import (
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
+    QPushButton, QTextEdit, QComboBox, QProgressBar,
+    QFileDialog, QMessageBox, QGroupBox, QFormLayout, QLineEdit
+)
 from PyQt6.QtCore import QThread, pyqtSignal, Qt
 from PyQt6.QtGui import QPixmap, QFont
 import re
@@ -15,6 +16,7 @@ import requests
 import tempfile
 import shutil
 
+# ========================== استایل برنامه ==========================
 STYLESHEET = """
 QWidget {
     background-color: #2c3e50;
@@ -36,7 +38,7 @@ QGroupBox::title {
 QLabel {
     color: #ecf0f1;
 }
-QTextEdit, QComboBox {
+QTextEdit, QComboBox, QLineEdit {
     background-color: #34495e;
     border: 1px solid #7f8c8d;
     border-radius: 4px;
@@ -44,9 +46,6 @@ QTextEdit, QComboBox {
 }
 QComboBox::drop-down {
     border: none;
-}
-QComboBox::down-arrow {
-    image: url(down_arrow.png); /* Fallback, not essential */
 }
 QPushButton {
     background-color: #3498db;
@@ -73,110 +72,147 @@ QProgressBar::chunk {
     background-color: #27ae60;
     border-radius: 4px;
 }
-QMessageBox {
-    background-color: #34495e;
-}
 """
 
-class GetFormatsThread(QThread):
-    finished = pyqtSignal(str)
-    thumbnail = pyqtSignal(str, str)
+# ============= توابع کمکی =============
+def build_base_cmd(browser: str, proxy_url: str) -> list:
+    """
+    ساخت لیست آرگومان‌های پایه 
+    """
+    cmd = ['yt-dlp']
+    
+    if proxy_url:
+        cmd.extend(['--proxy', proxy_url])
+    
+    if browser and browser.lower() != "none":
+        cmd.extend(['--cookies-from-browser', browser.lower()])
+    
+    # تنظیمات برای پایداری و جلوگیری از خطای 403
+    cmd.extend([
+        '--retries', '50',
+        '--fragment-retries', '50',
+        '--http-chunk-size', '10M'
+    ])
+    return cmd
 
-    def __init__(self, url, browser):
+def build_proxy_url(proxy_type: str, proxy_addr: str) -> str:
+    """ساخت آدرس کامل پروکسی از نوع و آدرس وارد شده توسط کاربر"""
+    if proxy_type == "None" or not proxy_addr.strip():
+        return ""
+    addr = proxy_addr.strip()
+    if proxy_type == "HTTP":
+        return f"http://{addr}"
+    elif proxy_type == "SOCKS4":
+        return f"socks4://{addr}"
+    elif proxy_type == "SOCKS5":
+        return f"socks5://{addr}"
+    return ""
+
+# ====================== ترد دریافت اطلاعات ویدیو ======================
+class GetFormatsThread(QThread):
+    finished = pyqtSignal(str)      # خروجی فرمان -F
+    thumbnail = pyqtSignal(str, str)  # عنوان و آدرس تصویر بندانگشتی
+
+    def __init__(self, url: str, browser: str, proxy_url: str):
         super().__init__()
         self.url = url
         self.browser = browser
+        self.proxy_url = proxy_url
 
     def run(self):
         creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-        cookie_cmd = f"--cookies-from-browser {self.browser}" if self.browser != "none" else ""
 
-        command_info = f'yt-dlp {cookie_cmd} --get-title --get-thumbnail "{self.url}"'
+        # 1) دریافت عنوان و تصویر بندانگشتی
+        cmd_info = build_base_cmd(self.browser, self.proxy_url)
+        cmd_info.extend(['--get-title', '--get-thumbnail', self.url])
+
         try:
             output_info = subprocess.check_output(
-                command_info, shell=True, text=True, creationflags=creationflags
+                cmd_info, text=True, creationflags=creationflags
             ).strip().split('\n')
             title = output_info[0] if output_info else "عنوان نامشخص"
-            thumbnail_url = output_info[1] if len(output_info) > 1 else None
-            self.thumbnail.emit(title, thumbnail_url)
+            thumb_url = output_info[1] if len(output_info) > 1 else None
+            self.thumbnail.emit(title, thumb_url)
         except subprocess.CalledProcessError as e:
             self.thumbnail.emit(f"خطا در گرفتن اطلاعات ویدیو: {e}", None)
 
-        command_formats = f'yt-dlp {cookie_cmd} -F "{self.url}"'
+        # 2) دریافت لیست فرمت‌ها
+        cmd_formats = build_base_cmd(self.browser, self.proxy_url)
+        cmd_formats.extend(['-F', self.url])
+
         try:
             output = subprocess.check_output(
-                command_formats, shell=True, text=True, stderr=subprocess.STDOUT, creationflags=creationflags
+                cmd_formats, text=True, stderr=subprocess.STDOUT, creationflags=creationflags
             )
             self.finished.emit(output)
         except subprocess.CalledProcessError as e:
             error_output = e.output
-            if "not available on this app" in error_output:
-                try:
-                    version_cmd = 'yt-dlp --version'
-                    current_version = subprocess.check_output(version_cmd, shell=True, text=True, creationflags=creationflags).strip()
-                    custom_message = (
-                        f"خطا: نسخه yt-dlp شما قدیمی است!\n\n"
-                        f"نسخه فعلی شما: {current_version}\n"
-                        f"یوتیوب درخواست‌های این نسخه را مسدود کرده است.\n\n"
-                        f"لطفاً با دستور 'yt-dlp -U' آن را به‌روزرسانی کنید."
-                    )
-                    self.finished.emit(custom_message)
-                except Exception:
-                    self.finished.emit("خطا: نسخه yt-dlp شما قدیمی است. لطفاً با دستور 'yt-dlp -U' آن را آپدیت کنید.")
+            if "not available on this app" in error_output or "403" in error_output:
+                self.finished.emit("خطا: یوتیوب درخواست را مسدود کرد (403 Forbidden).\n"
+                                   "لطفاً yt-dlp را به‌روز کنید یا از پروکسی معتبر استفاده نمایید.")
             else:
                 self.finished.emit(f"خطا در دریافت کیفیت‌ها:\n{error_output}")
 
+# ====================== ترد دانلود ویدیو ======================
 class DownloadThread(QThread):
     progress = pyqtSignal(int)
     message = pyqtSignal(str)
     finished_signal = pyqtSignal()
 
-    def __init__(self, command):
+    def __init__(self, cmd_list: list):
         super().__init__()
-        self.command = command
+        self.cmd_list = cmd_list
 
     def run(self):
         creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
         process = subprocess.Popen(
-            self.command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, creationflags=creationflags
+            self.cmd_list,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            creationflags=creationflags
         )
+
         for line in process.stdout:
+            # استخراج درصد پیشرفت
             percent = re.search(r'(\d+\.\d+)%|(\d+)%', line)
             if percent:
                 value = percent.group(1) or percent.group(2)
                 self.progress.emit(int(float(value)))
             self.message.emit(line.strip())
+
         process.wait()
         if process.returncode == 0:
             self.message.emit("دانلود با موفقیت انجام شد!")
             self.progress.emit(100)
         else:
-            error = process.stderr.read()
-            self.message.emit(f"خطا در دانلود: {error}")
+            self.message.emit(f"فرآیند دانلود با کد خطای {process.returncode} متوقف شد.")
             self.progress.emit(0)
         self.finished_signal.emit()
 
+# ====================== ترد استخراج صدا ======================
 class ExtractAudioThread(QThread):
     finished = pyqtSignal(str)
     error = pyqtSignal(str)
 
-    def __init__(self, command):
+    def __init__(self, cmd_list: list):
         super().__init__()
-        self.command = command
+        self.cmd_list = cmd_list
 
     def run(self):
         creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
         try:
-            result = subprocess.run(
-                self.command, shell=True, check=True, capture_output=True, text=True, creationflags=creationflags
+            subprocess.run(
+                self.cmd_list, check=True, capture_output=True, text=True, creationflags=creationflags
             )
             self.finished.emit("صدا با موفقیت استخراج شد!")
         except subprocess.CalledProcessError as e:
-            error_message = f'خطا در استخراج صدا: {e.stderr}'
+            error_msg = f'خطا در استخراج صدا: {e.stderr}'
             if "Audio:" not in e.stderr:
-                error_message += '\n\nفایل انتخاب‌شده جریان صوتی (Audio Stream) ندارد!'
-            self.error.emit(error_message)
+                error_msg += '\n\nفایل انتخاب‌شده جریان صوتی (Audio Stream) ندارد!'
+            self.error.emit(error_msg)
 
+# ====================== کلاس اصلی برنامه ======================
 class YouTubeDownloader(QWidget):
     def __init__(self):
         super().__init__()
@@ -190,11 +226,12 @@ class YouTubeDownloader(QWidget):
 
     def initUI(self):
         self.setWindowTitle('YouTube Downloader')
-        self.setGeometry(100, 100, 950, 850) 
+        self.setGeometry(100, 100, 980, 880)
 
         main_layout = QVBoxLayout(self)
 
-        input_group = QGroupBox("مرحله ۱: لینک‌ها و تنظیمات")
+        # ========== گروه ورودی و تنظیمات ==========
+        input_group = QGroupBox("مرحله ۱: لینک‌ها و تنظیمات شبکه")
         form_layout = QFormLayout()
 
         self.url_input = QTextEdit()
@@ -203,15 +240,25 @@ class YouTubeDownloader(QWidget):
         form_layout.addRow(QLabel("لینک‌های ویدیو:"), self.url_input)
 
         self.browser_select = QComboBox()
-        self.browser_select.addItems(["Firefox", "Chrome", "Edge", "Brave", "None"])
+        self.browser_select.addItems(["None", "Firefox", "Chrome", "Edge", "Brave"])
         form_layout.addRow(QLabel("استفاده از کوکی مرورگر:"), self.browser_select)
-        
+
+        # پروکسی با انتخاب نوع + آدرس
+        self.proxy_type = QComboBox()
+        self.proxy_type.addItems(["None", "HTTP", "SOCKS4", "SOCKS5"])
+        self.proxy_address = QLineEdit()
+        self.proxy_address.setPlaceholderText("مثال: 127.0.0.1:10808")
+        form_layout.addRow(QLabel("نوع پروکسی:"), self.proxy_type)
+        form_layout.addRow(QLabel("آدرس پروکسی:"), self.proxy_address)
+
         input_group.setLayout(form_layout)
         main_layout.addWidget(input_group)
 
+        # ========== گروه اطلاعات و عملیات ==========
         details_group = QGroupBox("مرحله ۲: اطلاعات ویدیو و عملیات دانلود")
         details_layout = QHBoxLayout()
 
+        # سمت چپ: تصویر بندانگشتی و عنوان
         info_layout = QVBoxLayout()
         self.thumbnail_label = QLabel('پیش‌نمایش ویدیو در اینجا نمایش داده می‌شود')
         self.thumbnail_label.setStyleSheet("border: 1px dashed #7f8c8d; background-color: #34495e; border-radius: 5px;")
@@ -224,14 +271,15 @@ class YouTubeDownloader(QWidget):
         info_layout.addWidget(self.thumbnail_label)
         info_layout.addWidget(self.title_label)
         info_layout.addStretch()
-        
+
+        # سمت راست: دکمه‌ها و انتخاب کیفیت
         actions_layout = QVBoxLayout()
         self.get_formats_btn = QPushButton('بارگیری اطلاعات اولین لینک')
         self.quality_select = QComboBox()
         quality_layout = QHBoxLayout()
         quality_layout.addWidget(QLabel("انتخاب کیفیت (برای دانلود تکی):"))
         quality_layout.addWidget(self.quality_select)
-        
+
         self.download_btn = QPushButton('دانلود ویدیو تکی')
         self.download_batch_btn = QPushButton('دانلود همه لینک‌ها (پشت سر هم)')
         self.save_custom_btn = QPushButton('انتخاب مسیر ذخیره')
@@ -246,49 +294,61 @@ class YouTubeDownloader(QWidget):
         actions_layout.addWidget(self.download_audio_btn)
         actions_layout.addStretch()
 
-        details_layout.addLayout(info_layout, 2) 
-        details_layout.addLayout(actions_layout, 1) 
+        details_layout.addLayout(info_layout, 2)
+        details_layout.addLayout(actions_layout, 1)
         details_group.setLayout(details_layout)
         main_layout.addWidget(details_group)
 
-        log_group = QGroupBox("مرحله ۳: خروجی و لاگ")
+        # ========== گروه خروجی و لاگ ==========
+        log_group = QGroupBox("مرحله ۳: خروجی سیستم و لاگ")
         log_layout = QVBoxLayout()
         self.progress_bar = QProgressBar()
         self.progress_bar.setValue(0)
         self.formats_list = QTextEdit()
         self.formats_list.setReadOnly(True)
         self.formats_list.setFont(QFont("Courier New", 9))
-        
+
         log_layout.addWidget(self.progress_bar)
         log_layout.addWidget(self.formats_list)
         log_group.setLayout(log_layout)
         main_layout.addWidget(log_group)
 
+        # اتصال سیگنال‌ها
         self.get_formats_btn.clicked.connect(self.start_get_formats)
         self.download_btn.clicked.connect(self.download_video)
         self.download_batch_btn.clicked.connect(self.start_batch_download)
         self.save_custom_btn.clicked.connect(self.set_custom_path)
         self.download_audio_btn.clicked.connect(self.select_file_for_audio_extraction)
 
+    # ------------------------------------------------------------
     def check_dependencies(self):
+        """بررسی وجود yt-dlp و ffmpeg در سیستم"""
         self.formats_list.setText("در حال بررسی پیش‌نیازها...")
         if not shutil.which("yt-dlp"):
             QMessageBox.critical(self, "خطا", "yt-dlp یافت نشد! لطفاً آن را نصب کرده و در PATH سیستم قرار دهید.")
             self.formats_list.setText("خطا: yt-dlp نصب نیست.")
             return
-        
+
         if not shutil.which("ffmpeg"):
-            QMessageBox.warning(self, "هشدار", "ffmpeg یافت نشد! برای ترکیب ویدیو و صدا و استخراج صدا، نصب آن ضروری است.")
+            QMessageBox.warning(self, "هشدار", "ffmpeg یافت نشد! برای ترکیب ویدیو و صدا و استخراج صدا ضروری است.")
             self.formats_list.setText("هشدار: ffmpeg نصب نیست. عملکرد برنامه محدود خواهد بود.")
-        
-        self.formats_list.append("\nتمام پیش‌نیازهای اصلی یافت شدند. برنامه آماده استفاده است.")
-        
+
+        self.formats_list.append("\nتمامی پیش‌نیازها شناسایی شدند. برنامه آماده کار است.")
+
+    def get_proxy_url(self) -> str:
+        """دریافت آدرس کامل پروکسی از فیلدهای نوع و آدرس"""
+        ptype = self.proxy_type.currentText()
+        addr = self.proxy_address.text().strip()
+        return build_proxy_url(ptype, addr)
+
+    # ------------------------------------------------------------
     def start_get_formats(self):
+        """دریافت اطلاعات اولین لینک موجود در تکست باکس"""
         full_text = self.url_input.toPlainText().strip()
         if not full_text:
             QMessageBox.warning(self, "هشدار", "لطفاً ابتدا لینک ویدیو را وارد کنید.")
             return
-        
+
         url = full_text.split('\n')[0].strip()
         if not url:
             QMessageBox.warning(self, "هشدار", "هیچ لینکی در خط اول یافت نشد.")
@@ -296,50 +356,57 @@ class YouTubeDownloader(QWidget):
 
         self.formats_list.setText('در حال بارگیری اطلاعات ویدیو...')
         self.set_buttons_enabled(False)
-        self.progress_bar.setRange(0, 0) 
-        
+        self.progress_bar.setRange(0, 0)  # حالت نامشخص
+
         browser = self.browser_select.currentText().lower()
-        self.get_formats_thread = GetFormatsThread(url, browser)
+        proxy_url = self.get_proxy_url()
+
+        self.get_formats_thread = GetFormatsThread(url, browser, proxy_url)
         self.get_formats_thread.finished.connect(self.on_get_formats_finished)
         self.get_formats_thread.thumbnail.connect(self.on_thumbnail_received)
         self.get_formats_thread.start()
 
-    def on_thumbnail_received(self, title, thumbnail_url):
+    def on_thumbnail_received(self, title: str, thumbnail_url: str):
+        """دریافت و نمایش تصویر بندانگشتی و عنوان ویدیو"""
         self.title_label.setText(f'عنوان ویدیو: {title}')
         if thumbnail_url:
             try:
-                response = requests.get(thumbnail_url, timeout=10)
+                proxies = {}
+                proxy_url = self.get_proxy_url()
+                if proxy_url:
+                    proxies = {'http': proxy_url, 'https': proxy_url}
+
+                response = requests.get(thumbnail_url, timeout=10, proxies=proxies)
                 response.raise_for_status()
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_file:
-                    tmp_file.write(response.content)
-                    thumbnail_path = tmp_file.name
-                
-                pixmap = QPixmap(thumbnail_path)
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
+                    tmp.write(response.content)
+                    tmp_path = tmp.name
+
+                pixmap = QPixmap(tmp_path)
                 self.thumbnail_label.setPixmap(pixmap.scaled(
-                    self.thumbnail_label.size(), 
-                    Qt.AspectRatioMode.KeepAspectRatio, 
+                    self.thumbnail_label.size(),
+                    Qt.AspectRatioMode.KeepAspectRatio,
                     Qt.TransformationMode.SmoothTransformation
                 ))
-                os.remove(thumbnail_path)
-            except requests.exceptions.RequestException as e:
-                self.thumbnail_label.setText(f'خطا در بارگیری تصویر:\n{e}')
+                os.remove(tmp_path)
+            except Exception as e:
+                self.thumbnail_label.setText(f'بارگیری تصویر ناموفق:\n{e}')
         else:
             self.thumbnail_label.setText('تصویر پیش‌نمایش در دسترس نیست')
 
-    def on_get_formats_finished(self, output):
+    def on_get_formats_finished(self, output: str):
+        """پردازش خروجی -F و پر کردن کامبوباکس کیفیت‌ها"""
         self.formats_list.setText(output)
         self.quality_select.clear()
         self.format_sizes.clear()
 
-        if "ERROR" in output.upper():
-             QMessageBox.warning(self, "خطا", f"خطایی در دریافت اطلاعات رخ داد:\n{output}")
-
         quality_720_index = -1
         lines = output.split('\n')
-        
-        start_index = next((i for i, line in enumerate(lines) if line.strip().startswith("ID")), -1)
-        if start_index != -1:
-            for line in lines[start_index + 1:]:
+
+        # پیدا کردن خط شروع جدول فرمت‌ها (شامل "ID")
+        start_idx = next((i for i, line in enumerate(lines) if line.strip().startswith("ID")), -1)
+        if start_idx != -1:
+            for line in lines[start_idx + 1:]:
                 if 'video only' in line or 'audio only' not in line:
                     parts = re.split(r'\s+', line.strip())
                     if len(parts) > 2 and parts[0].isdigit():
@@ -357,19 +424,33 @@ class YouTubeDownloader(QWidget):
         if quality_720_index != -1:
             self.quality_select.setCurrentIndex(quality_720_index)
         elif self.quality_select.count() == 0 and "ERROR" not in output.upper():
-            QMessageBox.warning(self, "خطا", "هیچ فرمت ویدیویی معتبری یافت نشد. ممکن است لینک مشکل داشته باشد یا ویدیو خصوصی باشد.")
+            QMessageBox.warning(self, "خطا", "هیچ فرمت ویدیویی معتبری یافت نشد.")
 
         self.set_buttons_enabled(True)
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
 
+    # ------------------------------------------------------------
     def set_custom_path(self):
+        """انتخاب پوشه ذخیره‌سازی دلخواه"""
         path = QFileDialog.getExistingDirectory(self, 'پوشه ذخیره را انتخاب کنید')
         if path:
             self.custom_path = path
-            QMessageBox.information(self, "مسیر ذخیره", f'مسیر دلخواه انتخاب شد: {self.custom_path}')
+            QMessageBox.information(self, "مسیر ذخیره", f'مسیر دلخواه انتخاب شد:\n{self.custom_path}')
 
+    def get_save_path(self) -> str:
+        """دریافت مسیر ذخیره (پیش‌فرض دسکتاپ یا مسیر سفارشی) با قالب‌بندی نام فایل"""
+        if self.custom_path:
+            return os.path.join(self.custom_path, "%(title)s.%(ext)s")
+        else:
+            desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+            if not os.path.exists(desktop):
+                desktop = os.path.expanduser("~")
+            return os.path.join(desktop, "%(title)s.%(ext)s")
+
+    # ------------------------------------------------------------
     def download_video(self):
+        """دانلود تکی بر اساس کیفیت انتخاب شده"""
         full_text = self.url_input.toPlainText().strip()
         if not full_text:
             QMessageBox.warning(self, "خطا", "لطفاً لینک را وارد کنید!")
@@ -383,21 +464,24 @@ class YouTubeDownloader(QWidget):
 
         match = re.search(r'\((\w+)\)', format_text)
         if not match:
-             QMessageBox.warning(self, "خطا", "فرمت انتخاب شده معتبر نیست.")
-             return
+            QMessageBox.warning(self, "خطا", "فرمت انتخاب شده معتبر نیست.")
+            return
         format_id = match.group(1)
-        
-        save_path = self.get_save_path()
-        self.formats_list.setText(f'در حال آماده‌سازی برای دانلود در: {os.path.dirname(save_path)}')
-        
-        browser = self.browser_select.currentText().lower()
-        cookie_cmd = f"--cookies-from-browser {browser}" if browser != "none" else ""
-        command = f'yt-dlp {cookie_cmd} -f {format_id}+bestaudio --merge-output-format mp4 -o "{save_path}" "{url}"'
-        
-        self.start_download(command)
 
+        save_path = self.get_save_path()
+        self.formats_list.setText(f'آماده‌سازی دانلود در:\n{os.path.dirname(save_path)}')
+
+        browser = self.browser_select.currentText().lower()
+        proxy_url = self.get_proxy_url()
+        cmd = build_base_cmd(browser, proxy_url)
+        cmd.extend(['-f', f'{format_id}+bestaudio', '--merge-output-format', 'mp4', '-o', save_path, url])
+
+        self.start_download(cmd)
+
+    # ------------------------------------------------------------
     def start_batch_download(self):
-        urls = [url.strip() for url in self.url_input.toPlainText().strip().split('\n') if url.strip()]
+        """شروع دانلود پشت سر هم تمام لینک‌ها (با بهترین کیفیت ممکن)"""
+        urls = [u.strip() for u in self.url_input.toPlainText().strip().split('\n') if u.strip()]
         if not urls:
             QMessageBox.warning(self, "خطا", "هیچ لینکی برای دانلود وارد نشده است!")
             return
@@ -410,99 +494,103 @@ class YouTubeDownloader(QWidget):
     def process_next_in_queue(self):
         if self.current_download_index < len(self.download_queue):
             url = self.download_queue[self.current_download_index]
-            self.formats_list.append(f"\n{'='*50}\nشروع دانلود لینک {self.current_download_index + 1} از {len(self.download_queue)}: {url}\n{'='*50}")
-            
+            self.formats_list.append(f"\n{'='*50}\nشروع دانلود لینک {self.current_download_index+1} از {len(self.download_queue)}:\n{url}\n{'='*50}")
+
             save_path = self.get_save_path()
             browser = self.browser_select.currentText().lower()
-            cookie_cmd = f"--cookies-from-browser {browser}" if browser != "none" else ""
-            
-            command = f'yt-dlp {cookie_cmd} -f "bestvideo+bestaudio/best" --merge-output-format mp4 -o "{save_path}" "{url}"'
-            
-            self.start_download(command, is_batch=True)
+            proxy_url = self.get_proxy_url()
+            cmd = build_base_cmd(browser, proxy_url)
+            cmd.extend(['-f', 'bestvideo+bestaudio/best', '--merge-output-format', 'mp4', '-o', save_path, url])
+
+            self.start_download(cmd, is_batch=True)
         else:
             QMessageBox.information(self, "پایان دانلود", "تمام لینک‌های موجود در صف با موفقیت دانلود شدند.")
             self.formats_list.append("\nعملیات دانلود دسته‌ای به پایان رسید.")
             self.set_buttons_enabled(True)
 
     def on_batch_item_finished(self):
+        """بعد از تمام شدن هر دانلود در حالت دسته‌ای، به لینک بعدی برو"""
         self.current_download_index += 1
         self.process_next_in_queue()
 
+    # ------------------------------------------------------------
     def select_file_for_audio_extraction(self):
-        video_file, _ = QFileDialog.getOpenFileName(self, 'فایل ویدیویی را برای استخراج صدا انتخاب کنید', '', 'Video Files (*.mp4 *.mkv *.webm *.avi *.mov)')
+        """انتخاب فایل ویدیویی از دیسک برای استخراج صدا"""
+        video_file, _ = QFileDialog.getOpenFileName(
+            self, 'فایل ویدیویی را برای استخراج صدا انتخاب کنید', '',
+            'Video Files (*.mp4 *.mkv *.webm *.avi *.mov)'
+        )
         if video_file:
             self.extract_audio_from_file(video_file)
 
-    def extract_audio_from_file(self, video_file):
+    def extract_audio_from_file(self, video_file: str):
+        """استخراج MP3 با کیفیت 320k از فایل ویدیویی با ffmpeg"""
         audio_file = os.path.splitext(video_file)[0] + '.mp3'
         self.formats_list.setText(f'در حال استخراج صدا از:\n{video_file}\nبه:\n{audio_file}')
-        
-        command = f'ffmpeg -i "{video_file}" -vn -c:a libmp3lame -b:a 320k "{audio_file}" -y'
-        
+
+        # دستور ffmpeg به صورت لیست (بدون shell=True)
+        cmd = ['ffmpeg', '-i', video_file, '-vn', '-c:a', 'libmp3lame', '-b:a', '320k', audio_file, '-y']
+
         self.progress_bar.setRange(0, 0)
-        self.extract_thread = ExtractAudioThread(command)
+        self.extract_thread = ExtractAudioThread(cmd)
         self.extract_thread.finished.connect(self.on_extract_audio_finished)
         self.extract_thread.error.connect(self.on_extract_audio_error)
         self.extract_thread.start()
 
-    def on_extract_audio_finished(self, message):
+    def on_extract_audio_finished(self, message: str):
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(100)
         self.formats_list.append(f"\nموفقیت: {message}")
         QMessageBox.information(self, "عملیات موفق", message)
 
-    def on_extract_audio_error(self, error_message):
+    def on_extract_audio_error(self, error_message: str):
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
         self.formats_list.append(f"\nخطا: {error_message}")
         QMessageBox.critical(self, "خطا در استخراج", error_message)
 
-    def start_download(self, command, is_batch=False):
+    # ------------------------------------------------------------
+    def start_download(self, cmd_list: list, is_batch: bool = False):
+        """شروع ترد دانلود با دستور داده شده"""
         self.progress_bar.setValue(0)
         if not is_batch:
             self.set_buttons_enabled(False)
-            
-        self.download_thread = DownloadThread(command)
+
+        self.download_thread = DownloadThread(cmd_list)
         self.download_thread.progress.connect(self.progress_bar.setValue)
         self.download_thread.message.connect(self.on_download_message)
-        
+
         if is_batch:
             self.download_thread.finished_signal.connect(self.on_batch_item_finished)
         else:
             self.download_thread.finished_signal.connect(self.on_single_download_finished)
-            
+
         self.download_thread.start()
 
-    def on_download_message(self, message):
+    def on_download_message(self, message: str):
         self.formats_list.append(message)
         if "Destination" in message:
             self.downloaded_file = message.split("Destination: ")[-1].strip()
         elif "ERROR" in message:
-            self.formats_list.append(f"!!!!!!!! خطای جدی: {message} !!!!!!!!")
+            self.formats_list.append(f"!!! خطا: {message} !!!")
 
     def on_single_download_finished(self):
         self.set_buttons_enabled(True)
         if self.progress_bar.value() == 100:
             QMessageBox.information(self, "دانلود کامل شد", f"فایل با موفقیت دانلود شد!\n\nمسیر: {self.downloaded_file}")
 
-    def get_save_path(self):
-        if self.custom_path:
-            return os.path.join(self.custom_path, "%(title)s.%(ext)s")
-        else:
-            desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
-            if not os.path.exists(desktop_path):
-                desktop_path = os.path.expanduser("~")
-            return os.path.join(desktop_path, "%(title)s.%(ext)s")
-            
-    def set_buttons_enabled(self, enabled):
+    # ------------------------------------------------------------
+    def set_buttons_enabled(self, enabled: bool):
         self.download_btn.setEnabled(enabled)
         self.download_batch_btn.setEnabled(enabled)
         self.get_formats_btn.setEnabled(enabled)
         self.download_audio_btn.setEnabled(enabled)
 
+
+# ========================== اجرای برنامه ==========================
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    app.setStyleSheet(STYLESHEET) 
+    app.setStyleSheet(STYLESHEET)
     window = YouTubeDownloader()
     window.show()
     sys.exit(app.exec())
